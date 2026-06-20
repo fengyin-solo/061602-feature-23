@@ -1,4 +1,4 @@
-import type { Weather, WeatherEffect, BerryType, GrowthStage, Personality } from '@/types/game'
+import type { Weather, WeatherEffect, BerryType, GrowthStage, Personality, StageCareConfig, CareScheme } from '@/types/game'
 
 export const ATTR_MIN = 0
 export const ATTR_MAX = 100
@@ -110,3 +110,42 @@ export const BIRD_NAMES = [
   '糖糖', '圆圆', '小米', '小麦', '云朵', '星星', '月亮', '太阳',
   '小橘', '小蓝', '小绿', '小红', '阿黄', '阿白', '阿黑', '阿灰',
 ]
+
+export const DEFAULT_STAGE_CARE: Record<Exclude<GrowthStage, 'egg'>, StageCareConfig> = {
+  chick: {
+    enabled: true,
+    hungerThreshold: 50,
+    feedAmount: 10,
+    autoCalm: true,
+    calmThreshold: 40,
+  },
+  juvenile: {
+    enabled: true,
+    hungerThreshold: 40,
+    feedAmount: 10,
+    autoCalm: true,
+    calmThreshold: 50,
+  },
+  subadult: {
+    enabled: true,
+    hungerThreshold: 35,
+    feedAmount: 8,
+    autoCalm: false,
+    calmThreshold: 60,
+  },
+  adult: {
+    enabled: true,
+    hungerThreshold: 30,
+    feedAmount: 5,
+    autoCalm: false,
+    calmThreshold: 70,
+  },
+}
+
+export const DEFAULT_CARE_SCHEME: CareScheme = {
+  enabled: false,
+  stageConfigs: DEFAULT_STAGE_CARE,
+  lastAutoCareAt: 0,
+}
+
+export const AUTO_CARE_INTERVAL = 3000

@@ -56,6 +56,7 @@ export interface GameState {
   eventLog: { id: string; message: string; type: string; timestamp: number }[]
   score?: GameScore
   selectedBirdId?: string
+  careScheme: CareScheme
 }
 
 export interface GameScore {
@@ -74,4 +75,18 @@ export interface WeatherEffect {
   healthMod: number
   awayChance?: number
   sickChance?: number
+}
+
+export interface StageCareConfig {
+  enabled: boolean
+  hungerThreshold: number
+  feedAmount: number
+  autoCalm: boolean
+  calmThreshold: number
+}
+
+export interface CareScheme {
+  enabled: boolean
+  stageConfigs: Record<Exclude<GrowthStage, 'egg'>, StageCareConfig>
+  lastAutoCareAt: number
 }

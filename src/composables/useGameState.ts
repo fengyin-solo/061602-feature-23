@@ -1,5 +1,5 @@
 import { reactive, computed, watch } from 'vue'
-import type { GameState, Bird, Berry, GrowthStage, Personality, BerryType, Weather, GameScore } from '@/types/game'
+import type { GameState, Bird, Berry, GrowthStage, Personality, BerryType, Weather, GameScore, CareScheme, StageCareConfig } from '@/types/game'
 import {
   ATTR_MIN, ATTR_MAX, DEATH_THRESHOLD,
   STAGE_DURATION, FOOD_NEED_MULTIPLIER,
@@ -7,7 +7,7 @@ import {
   BERRY_SPAWN_INTERVAL, BERRY_MAX_COUNT, BERRY_LIFETIME,
   BERRY_VALUES, WEATHER_CHANGE_INTERVAL, WEATHER_EFFECTS,
   DAY_DURATION, INITIAL_FOOD, MIN_EGGS, MAX_EGGS,
-  MAX_BREEDING_ROUNDS, BIRD_NAMES,
+  MAX_BREEDING_ROUNDS, BIRD_NAMES, DEFAULT_CARE_SCHEME, AUTO_CARE_INTERVAL,
 } from '@/utils/constants'
 import { randomInt, randomFloat, clamp, randomChoice, generateId, chance } from '@/utils/random'
 import { saveGame, loadGame, clearSave } from '@/utils/storage'
@@ -26,6 +26,7 @@ const createInitialState = (): GameState => ({
   breedingCount: 0,
   maxBreedingRounds: MAX_BREEDING_ROUNDS,
   eventLog: [],
+  careScheme: JSON.parse(JSON.stringify(DEFAULT_CARE_SCHEME)),
 })
 
 const state = reactive<GameState>(createInitialState())
@@ -150,6 +151,7 @@ const updateGame = (deltaMs: number) => {
     updateBird(bird, deltaMs, weatherEffect)
   })
 
+  autoCare()
   cleanupExpiredBerries()
   checkGameEnd()
   saveGame(state)
@@ -359,6 +361,66 @@ const calmBird = (birdId: string): boolean => {
   return true
 }
 
+const autoCare = () => {
+  if (!state.careScheme.enabled) return
+  if (Date.now() - state.careScheme.lastAutoCareAt < AUTO_CARE_INTERVAL) return
+
+  state.careScheme.lastAutoCareAt = Date.now()
+  const aliveBirds = state.birds.filter(b => !b.isDead && !b.isAway && b.stage !== 'egg')
+
+  let fedCount = 0
+  let calmedCount = 0
+
+  aliveBirds.forEach(bird => {
+    const stageKey = bird.stage as Exclude<GrowthStage, 'egg'>
+    const config = state.careScheme.stageConfigs[stageKey]
+    if (!config || !config.enabled) return
+
+    if (bird.hunger < config.hungerThreshold && state.foodStock >= config.feedAmount) {
+      state.foodStock -= config.feedAmount
+      bird.hunger = clamp(bird.hunger + config.feedAmount, ATTR_MIN, ATTR_MAX)
+      bird.feedingCount++
+      bird.lastFedAt = Date.now()
+      bird.justFed = true
+      fedCount++
+
+      if (bird.fear > 20) {
+        const fearReduce = bird.personality === 'shy' ? 3 : bird.personality === 'gentle' ? 5 : 4
+        bird.fear = clamp(bird.fear - fearReduce, ATTR_MIN, ATTR_MAX)
+      }
+    }
+
+    if (config.autoCalm && bird.fear > config.calmThreshold) {
+      bird.fear = clamp(bird.fear - randomInt(8, 15), ATTR_MIN, ATTR_MAX)
+      calmedCount++
+    }
+  })
+
+  if (fedCount > 0 || calmedCount > 0) {
+    const parts: string[] = []
+    if (fedCount > 0) parts.push(`喂食 ${fedCount} 只`)
+    if (calmedCount > 0) parts.push(`安抚 ${calmedCount} 只`)
+    addEventLog(`🤖 批量照料：${parts.join('，')}`, 'info')
+  }
+}
+
+const toggleCareScheme = (enabled: boolean) => {
+  state.careScheme.enabled = enabled
+  addEventLog(enabled ? '✅ 已开启批量照料模式' : '⏸️ 已关闭批量照料模式', 'info')
+}
+
+const updateStageCareConfig = (stage: Exclude<GrowthStage, 'egg'>, config: Partial<StageCareConfig>) => {
+  state.careScheme.stageConfigs[stage] = {
+    ...state.careScheme.stageConfigs[stage],
+    ...config,
+  }
+}
+
+const resetCareScheme = () => {
+  state.careScheme = JSON.parse(JSON.stringify(DEFAULT_CARE_SCHEME))
+  addEventLog('🔄 批量照料配置已重置为默认值', 'info')
+}
+
 const allAdults = computed(() => {
   const alive = state.birds.filter(b => !b.isDead)
   return alive.length > 0 && alive.every(b => b.stage === 'adult')
@@ -473,7 +535,10 @@ const returnToStart = () => {
 
 const tryLoadGame = (): boolean => {
   const saved = loadGame()
-  if (saved && saved.phase === 'playing' || saved?.phase === 'breeding') {
+  if (saved && (saved.phase === 'playing' || saved.phase === 'breeding')) {
+    if (!saved.careScheme) {
+      saved.careScheme = JSON.parse(JSON.stringify(DEFAULT_CARE_SCHEME))
+    }
     Object.assign(state, saved)
     startGameLoop()
     return true
@@ -506,5 +571,8 @@ export function useGameState() {
     tryLoadGame,
     allAdults,
     aliveCount,
+    toggleCareScheme,
+    updateStageCareConfig,
+    resetCareScheme,
   }
 }
